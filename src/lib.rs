@@ -1,3 +1,5 @@
+use std::io::Write;
+use std::path::PathBuf;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
@@ -45,64 +47,97 @@ impl Config {
             stop_sequence: None,
         }
     }
-    pub fn load_config() -> Result<Config> {
-        let config_file = std::env::var(CONFIG_ENV)
-            .unwrap_or_else(|_| String::from(std::env::var("HOME").unwrap() + "/.config"))
-            + "/"
-            + CONFIG_PATH;
-        let config = std::fs::read_to_string(config_file)?;
-        let config: Config = toml::from_str(&config)?;
-        Ok(config)
+
+    // load config file: takes an optional pathbuf to a config file and returns a config struct
+    pub fn load_config(&self, config_file: Option<&str>) -> Result<Config> {
+        // if config_file is none, check env for config path, default to ~/.config/winston/config.toml
+        let filepath = match config_file {
+            Some(config_file) => config_file.to_owned(),
+            None => Config::get_config_path()?,
+        };
+        let cfg = PathBuf::from(filepath);
+        // if config file exists, load it, otherwise return default config
+        if cfg.exists() {
+            let config = std::fs::read_to_string(cfg)?;
+            let config: Config = toml::from_str(&config)?;
+            Ok(config)
+        } else {
+            Ok(Config::default())
+        }
     }
 
-    pub fn save_config(&self) -> Result<()> {
-        let config_file = std::env::var(CONFIG_ENV)
-            .unwrap_or_else(|_| String::from(std::env::var("HOME").unwrap() + "/.config"))
-            + "/"
-            + CONFIG_PATH;
-        let mut file = std::fs::File::create(config_file)?;
-        file.write_all(toml::to_string(&self)?.as_bytes())?;
+    // save config file: takes a pathbuf to a config file, writes a config struct to it
+    pub fn save_config(&self, config_file: Option<&str>) -> Result<()> {
+        // if config_file is none, check env for config path, default to ~/.config/winston/config.toml
+        let filepath = match config_file {
+            Some(config_file) => config_file.to_owned(),
+            None => Config::get_config_path()?,
+        };
+        // create config file if it doesn't exist, otherwise overwrite it
+        let config_file = PathBuf::from(filepath);
+        let mut config_file = std::fs::File::create(config_file)?;
+        let config = toml::to_string(&self)?;
+        config_file.write_all(config.as_bytes())?;
         Ok(())
+    }
+
+    fn get_config_path() -> Result<String> {
+        let mut config_path = match std::env::var(CONFIG_ENV) {
+            Ok(config_path) => std::fs::canonicalize(config_path)?,
+            Err(_) => {
+                let mut home = std::fs::canonicalize(std::env::var("HOME")?)?;
+                home.push(".config");
+                home
+            }
+        };
+        // append CONFIG_PATH to config_path
+        config_path.push(CONFIG_PATH);
+        // return config_path as a string
+        let path = config_path.to_str().unwrap();
+        Ok(path.to_owned())
     }
 }
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = LONG_ABOUT)]
 struct Options {
-    #[clap(short, long, env = ENV, hide_env_values = true)]
+    #[arg(short, long, env = ENV, hide_env_values = true)]
     api_key: String,
+    #[arg(short, long, default_value_t = MODEL.to_string())]
+    model: String,
+    #[arg(short, long, default_value_t = MAX_TOKENS)]
+    max_tokens: usize,
+    #[arg(short, long, default_value_t = TEMPERATURE)]
+    temperature: f64,
+    #[arg(short, long, default_value_t = TOP_P)]
+    top_p: f64,
+    #[arg(short, long, default_value_t = FREQUENCY_PENALTY)]
+    frequency_penalty: f64,
+    #[arg(short, long, default_value_t = PRESENCE_PENALTY)]
+    presence_penalty: f64,
+    #[arg(short, long)]
+    stop_sequence: Option<String>,
+    #[arg(short, long, default_value_t = TIMEOUT)]
+    timeout: f64,
+    #[arg(short, long)]
+    config_path: Option<PathBuf>,
 }
 
 #[cfg(test)]
 mod test {
     // test write config file
     use super::*;
-    use std::fs::File;
-    use std::io::Write;
+    use std::path::PathBuf;
 
     #[test]
-    fn test_write_config() {
+    fn test_save_load_config() {
         let config = Config::default();
-        let config_file = std::env::var(CONFIG_ENV)
-            .unwrap_or_else(|_| String::from(std::env::var("HOME").unwrap() + "/.config"))
-            + "/"
-            + CONFIG_PATH;
-        let mut file = File::create(config_file).unwrap();
-        file.write_all(toml::to_string(&config).unwrap().as_bytes())
-            .unwrap();
-    }
+        let config_file = PathBuf::from("test.toml");
+        config.save_config(config_file.to_str()).unwrap();
+        assert!(config_file.exists());
 
-    #[test]
-    fn test_load_config() {
-        let config = Config::load_config().unwrap();
+        let config = config.load_config(config_file.to_str()).unwrap();
         assert_eq!(config.api_key, None);
-        assert_eq!(config.model, Some(MODEL.to_string()));
-        assert_eq!(config.max_tokens, Some(MAX_TOKENS));
-        assert_eq!(config.temperature, Some(TEMPERATURE));
-        assert_eq!(config.top_p, Some(TOP_P));
-        assert_eq!(config.frequency_penalty, Some(FREQUENCY_PENALTY));
-        assert_eq!(config.presence_penalty, Some(PRESENCE_PENALTY));
-        assert_eq!(config.timeout, Some(TIMEOUT));
-        assert_eq!(config.stop_sequence, None);
+        std::fs::remove_file(config_file).unwrap();
     }
 }
