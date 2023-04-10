@@ -15,9 +15,10 @@ use std::io::Write;
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+use super::Result;
 
 pub const OPENAI_ENDPOINT: &str = "https://api.openai.com";
+#[allow(dead_code)]
 pub const OPENAI_CHAT: &str = "/v1/chat/completions";
 pub const MODEL: &str = "davinci";
 pub const MAX_TOKENS: u32 = 64;
@@ -41,6 +42,7 @@ pub struct WinstonConfig {
     pub stop: String,
 }
 
+#[allow(dead_code)]
 impl WinstonConfig {
     // save configuration to provided filepath or the default config file location
     pub fn save_config(self, fp: Option<PathBuf>) -> Result<()> {
@@ -92,6 +94,7 @@ pub struct WinstonConfigBuilder {
     pub stop: Option<String>,
 }
 
+#[allow(dead_code)]
 impl WinstonConfigBuilder {
     pub fn new() -> Self {
         Self {
@@ -159,8 +162,8 @@ impl WinstonConfigBuilder {
     }
 
     pub fn build(self) -> Result<WinstonConfig> {
-        let openai_org_id = self.openai_org_id.unwrap();
-        let openai_api_key = self.openai_api_key.unwrap();
+        let openai_org_id = self.openai_org_id.expect("Missing OpenAI Organization ID");
+        let openai_api_key = self.openai_api_key.expect("Missing OpenAI API Key");
         let api_endpoint = self.api_endpoint.unwrap_or_else(|| OPENAI_ENDPOINT.to_string());
         let model = self.model.unwrap_or_else(|| MODEL.to_string());
         let max_tokens = self.max_tokens.unwrap_or_else(|| MAX_TOKENS);
@@ -229,9 +232,7 @@ impl WinstonConfigBuilder {
 #[cfg(test)]
 mod test {
     // sample config file
-    const TEST_CONFIG: &str = r#"openai_org_id = "org-NPoIX9eoeIPy22c6prGHl5J1"
-openai_api_key = "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"
-model = "davinci"
+    const TEST_CONFIG: &str = r#"model = "davinci"
 max_tokens = 2048
 tmperature = 0.9
 top_p = 1.0
@@ -255,8 +256,6 @@ stop = "\n"
             .load_config(&std::path::PathBuf::from(temp_file))
             .build().unwrap();
         // check that the config fields are set correctly
-        assert_eq!(config.openai_org_id, "org-NPoIX9eoeIPy22c6prGHl5J1");
-        assert_eq!(config.openai_api_key, "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");
         assert_eq!(config.model, "davinci");
         assert_eq!(config.max_tokens, 2048);
         assert_eq!(config.temperature, 0.9);
